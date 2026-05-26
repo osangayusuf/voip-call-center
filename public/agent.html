@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudCare - Agent Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="agent.js" defer></script>
+</head>
+<body>
+
+  <!-- App Bar -->
+  <header class="app-header">
+    <div class="logo-group">
+      <span class="logo-icon">🎧</span>
+      <span class="logo-text">CloudCare Agent Portal</span>
+    </div>
+    <a href="index.html" class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;">← Back to Hub</a>
+  </header>
+
+  <!-- SECTION 1: AGENT SIGN-ON (ACTIVE BY DEFAULT) -->
+  <div id="agent-setup" class="main-wrapper" style="justify-content: center; align-items: center; max-width: 500px;">
+    <div class="glass-card" style="padding: 30px; width: 100%;">
+      <h2 style="margin-bottom: 8px; text-align: center;">Agent Sign-On</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; text-align: center; margin-bottom: 24px;">
+        Register your name to access the calling center queues and handle customer WebRTC voice queries.
+      </p>
+
+      <form id="setup-form">
+        <div class="form-group">
+          <label for="agent-name-input">Display Name</label>
+          <input type="text" id="agent-name-input" placeholder="e.g. Sarah Jenkins" required autocomplete="name">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+          Go Online & Access Console 📶
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- SECTION 2: MAIN WORKSPACE (DASHBOARD) -->
+  <div id="agent-dashboard" class="main-wrapper" style="display: none;">
+    <div class="agent-grid">
+      
+      <!-- LEFT SIDEBAR: PROFILE & QUEUE STATUS -->
+      <aside class="agent-sidebar">
+        
+        <!-- Profile details -->
+        <div class="glass-card agent-profile-card">
+          <div class="agent-info">
+            <span id="agent-name-label" class="agent-name">Sarah Jenkins</span>
+            <span id="agent-status-label" class="agent-status-badge">Available</span>
+          </div>
+          <button type="button" id="status-toggle-btn" class="status-toggle" title="Toggle DND">
+            Go Offline
+          </button>
+        </div>
+
+        <!-- Live Queue list -->
+        <div class="glass-card queue-tracker-card">
+          <div class="queue-list-header">
+            <span style="font-weight: 700; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+              Active Queue
+            </span>
+            <span id="queue-count-badge" class="queue-count">0</span>
+          </div>
+
+          <div id="queue-list" class="queue-list-container">
+            <!-- Dynamic customer queue cards injected here -->
+            <div class="empty-queue-msg">
+              <span class="empty-queue-icon">🍃</span>
+              <span>No customers in queue</span>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- RIGHT PANEL: CALLING WORKSPACE -->
+      <main class="agent-main-workspace">
+        
+        <!-- Stats Widgets -->
+        <div class="agent-stats-strip">
+          
+          <div class="glass-card stat-widget">
+            <div class="stat-widget-icon">⚡</div>
+            <div class="stat-widget-details">
+              <span class="stat-widget-title">Active Calls</span>
+              <span id="stat-active-calls" class="stat-widget-number">0</span>
+            </div>
+          </div>
+
+          <div class="glass-card stat-widget">
+            <div class="stat-widget-icon">✅</div>
+            <div class="stat-widget-details">
+              <span class="stat-widget-title">Total Handled</span>
+              <span id="stat-total-calls" class="stat-widget-number">0</span>
+            </div>
+          </div>
+
+          <div class="glass-card stat-widget">
+            <div class="stat-widget-icon">⏱️</div>
+            <div class="stat-widget-details">
+              <span class="stat-widget-title">Avg Handle Time</span>
+              <span id="stat-avg-time" class="stat-widget-number">0s</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Calling Center Main Canvas Box -->
+        <div class="glass-card workspace-box">
+
+          <!-- Ringing sound effect (synthesised or native ring loops) -->
+          <audio id="ringtone-audio" loop src="https://assets.mixkit.co/active_storage/sfx/1359/1359-84.wav" style="display: none;"></audio>
+          <!-- Remote Customer Audio element -->
+          <audio id="agent-remote-audio" autoplay style="display: none;"></audio>
+
+          <!-- STATE A: IDLE (AWAITING CLIENT) -->
+          <div id="state-idle" class="workspace-state active">
+            <span class="workspace-state-icon" style="background: rgba(16, 185, 129, 0.05); color: var(--success); border: 1px solid var(--success);">
+              🎧
+            </span>
+            <div>
+              <h3>Awaiting Customer Connection</h3>
+              <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 6px;">
+                You are marked as <strong>Available</strong>. Calls in the queue will be presented to you instantly.
+              </p>
+            </div>
+          </div>
+
+          <!-- STATE B: OFFLINE / DND -->
+          <div id="state-offline" class="workspace-state">
+            <span class="workspace-state-icon" style="background: rgba(239, 68, 68, 0.05); color: var(--danger); border: 1px solid var(--danger); animation: none;">
+              💤
+            </span>
+            <div>
+              <h3>Console Paused</h3>
+              <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 6px;">
+                You are currently marked as <strong>Offline</strong>. Change status to begin receiving calls.
+              </p>
+            </div>
+          </div>
+
+          <!-- STATE C: RINGING OVERLAY -->
+          <div id="ringing-overlay" class="ringing-overlay">
+            <span class="ringing-bell">🔔</span>
+            <div>
+              <h2 style="margin-bottom: 6px;">Incoming Voice Call</h2>
+              <p id="ringing-caller-name" style="font-weight: 700; color: var(--primary-hover); font-size: 1.25rem;">Alex Morgan</p>
+              <p id="ringing-caller-issue" style="color: var(--text-muted); font-size: 0.95rem; margin-top: 6px; font-style: italic; max-width: 450px; line-height: 1.4;">
+                "Need assistance configuring my router"
+              </p>
+            </div>
+            <div class="ringing-actions">
+              <button id="btn-accept-ringing" class="btn btn-success">
+                Accept Call 🎧
+              </button>
+              <button id="btn-reject-ringing" class="btn btn-outline" style="border-color: var(--danger); color: var(--danger);">
+                Dismiss ❌
+              </button>
+            </div>
+          </div>
+
+          <!-- STATE D: ACTIVE CALL PANEL -->
+          <div id="state-call" class="active-call-grid">
+            
+            <!-- Call panel visualizers and controls -->
+            <div class="call-panel-side">
+              <div class="call-avatar" style="width: 100px; height: 100px; font-size: 2.8rem;">👤</div>
+              
+              <div style="text-align: center;">
+                <h3 id="active-customer-name">Alex Morgan</h3>
+                <span id="active-customer-dept" style="color: var(--primary-hover); font-weight: 600; font-size: 0.85rem;">Technical Support</span>
+              </div>
+
+              <div id="agent-call-timer" class="timer-text" style="font-size: 1.8rem; padding: 4px 16px;">00:00</div>
+
+              <!-- Volume Amplitude visualizer -->
+              <div style="width: 100%; text-align: left; display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-size: 0.75rem;">Frequency Visualizer</label>
+                <canvas id="agent-volume-canvas" class="visualizer-canvas"></canvas>
+              </div>
+
+              <div class="call-controls">
+                <button id="btn-agent-mute" class="btn btn-outline" style="padding: 10px 14px; font-size: 0.85rem;">
+                  🎤 Mute Mic
+                </button>
+                <button id="btn-agent-hangup" class="btn btn-danger" style="padding: 10px 14px; font-size: 0.85rem;">
+                  End Call 🛑
+                </button>
+              </div>
+            </div>
+
+            <!-- Notes notepad for log saving -->
+            <div class="notes-panel-side">
+              <label for="call-notes-input" style="font-size: 0.85rem;">Call Notes & Resolution Log</label>
+              <textarea id="call-notes-input" class="notes-textarea" placeholder="Type support session notes here (e.g. Walked client through router soft reset, verified connection is back online)..."></textarea>
+              
+              <div style="text-align: right;">
+                <span style="font-size: 0.75rem; color: var(--text-dark); margin-right: 10px;">Notes auto-save on hangup</span>
+              </div>
+
+              <div class="diagnostic-box" id="diagnostic-log">
+                <div class="diag-line">[System] WebRTC Diagnostics ready...</div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- CALL HISTORY SECTION -->
+        <div class="glass-card history-card">
+          <h3>Completed Call History</h3>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Caller Name</th>
+                  <th>Department</th>
+                  <th>Duration</th>
+                  <th>Issue Description</th>
+                  <th>Call Notes & Logs</th>
+                </tr>
+              </thead>
+              <tbody id="history-table-body">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-dark); font-style: italic;">
+                    No calls logged during this session
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </main>
+
+    </div>
+  </div>
+
+</body>
+</html>

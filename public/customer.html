@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudCare - Customer Support Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="customer.js" defer></script>
+</head>
+<body>
+
+  <!-- App Bar -->
+  <header class="app-header">
+    <div class="logo-group">
+      <span class="logo-icon">📡</span>
+      <span class="logo-text">CloudCare Support</span>
+    </div>
+    <a href="index.html" class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;">← Back to Hub</a>
+  </header>
+
+  <!-- Main Container -->
+  <div class="main-wrapper" style="justify-content: center; align-items: center;">
+    <div class="customer-container">
+
+      <!-- SECTION 1: INTAKE FORM (ACTIVE BY DEFAULT) -->
+      <div id="customer-intake" class="ui-section active">
+        <div class="glass-card" style="padding: 30px;">
+          <h2 style="margin-bottom: 8px; text-align: center;">Talk to an Agent</h2>
+          <p style="color: var(--text-muted); font-size: 0.95rem; text-align: center; margin-bottom: 24px;">
+            Fill out this quick form. You will be matched with our next available support representative immediately.
+          </p>
+
+          <form id="intake-form">
+            <div class="form-group">
+              <label for="customer-name">Your Full Name</label>
+              <input type="text" id="customer-name" placeholder="e.g. Alex Morgan" required autocomplete="name">
+            </div>
+
+            <div class="form-group">
+              <label for="customer-dept">Department</label>
+              <select id="customer-dept">
+                <option value="General Support">General Support</option>
+                <option value="Technical Help">Technical Help</option>
+                <option value="Billing & Accounts">Billing & Accounts</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="customer-issue">Short Description of Issue</label>
+              <textarea id="customer-issue" rows="3" placeholder="e.g. My router is flashing red and internet is offline..." required></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+              Request Agent Call 📞
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- SECTION 2: QUEUE LOBBY (WAITING ROOM) -->
+      <div id="customer-lobby" class="ui-section">
+        <div class="glass-card queue-card">
+          <div class="queue-loader">
+            <div class="loader-ring"></div>
+            <div class="loader-progress"></div>
+            <div id="queue-position-display" class="queue-num-overlay">-</div>
+          </div>
+          
+          <h2 class="queue-status-text">You are in the queue</h2>
+          <p style="color: var(--text-muted); font-size: 0.95rem;">
+            Please stay on this page. We will ring you automatically as soon as an agent is ready.
+          </p>
+
+          <div class="queue-stats-grid">
+            <div class="queue-stat-item">
+              <div style="font-size: 0.8rem; color: var(--text-dark); text-transform: uppercase;">Estimated Wait</div>
+              <div id="queue-wait-display" class="queue-wait-display queue-stat-val">Calculating...</div>
+            </div>
+            <div class="queue-stat-item">
+              <div style="font-size: 0.8rem; color: var(--text-dark); text-transform: uppercase;">People Waiting</div>
+              <div id="queue-total-display" class="queue-stat-val">-</div>
+            </div>
+          </div>
+
+          <!-- Soothing Procedural Hold Music Synthesizer UI -->
+          <div class="glass-card hold-music-panel" style="background: rgba(255,255,255,0.02); margin-top: 20px;">
+            <div class="hold-text-info" style="text-align: left;">
+              <span style="font-weight: 700; font-size: 0.95rem;">Relaxing Hold Music</span>
+              <span id="hold-status-desc" style="font-size: 0.8rem; color: var(--text-muted);">Ambient synthesizer playing...</span>
+            </div>
+            <div class="music-waves" id="hold-music-waves">
+              <div class="music-wave-bar"></div>
+              <div class="music-wave-bar"></div>
+              <div class="music-wave-bar"></div>
+              <div class="music-wave-bar"></div>
+              <div class="music-wave-bar"></div>
+            </div>
+            <button type="button" id="music-toggle-btn" class="music-toggle-btn" title="Toggle Hold Music">
+              🔊
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 3: ACTIVE WebRTC CALL -->
+      <div id="customer-call" class="ui-section">
+        <div class="glass-card call-card">
+          <div class="call-avatar">👨‍💻</div>
+          <div>
+            <h2 id="call-agent-name" style="margin-bottom: 4px;">Support Agent</h2>
+            <p style="color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+              <span style="width: 8px; height: 8px; border-radius:50%; background: var(--success); display:block; animation: pulse-success 1.5s infinite;"></span>
+              Active Support Call
+            </p>
+          </div>
+
+          <div id="call-timer" class="timer-text">00:00</div>
+
+          <!-- HTML5 Audio element to play remote Agent audio stream -->
+          <audio id="remote-audio" autoplay style="display: none;"></audio>
+
+          <!-- Voice visualizer gauge -->
+          <div style="width: 100%; text-align: left; display: flex; flex-direction: column; gap: 8px;">
+            <label style="font-size: 0.75rem;">Voice Amplitude Visualizer</label>
+            <canvas id="volume-canvas" class="visualizer-canvas"></canvas>
+          </div>
+
+          <div class="call-controls">
+            <button id="btn-mute" class="btn btn-outline">
+              🎤 Mute Mic
+            </button>
+            <button id="btn-hangup" class="btn btn-danger">
+              Hang Up 🛑
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 4: CALL ENDED / FEEDBACK -->
+      <div id="customer-ended" class="ui-section">
+        <div class="glass-card" style="padding: 40px; text-align: center; display: flex; flex-direction: column; gap: 20px;">
+          <div style="font-size: 4rem;">👋</div>
+          <h2>Call Completed Successfully</h2>
+          <p style="color: var(--text-muted); font-size: 0.95rem; max-width: 400px; margin: 0 auto;">
+            Thank you for calling CloudCare. We completely bypassed carrier routing fees and avoided offline hold systems.
+          </p>
+          <a href="customer.html" class="btn btn-primary" style="margin-top: 10px;">
+            Make Another Call 📞
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>
